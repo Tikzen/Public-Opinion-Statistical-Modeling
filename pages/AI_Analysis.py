@@ -13,7 +13,7 @@ st.set_page_config(page_title="AI Analysis", page_icon="🤖", layout="wide")
 st.title("🤖 AI Analysis")
 
 uploaded_file = st.file_uploader("上传百度指数文件", type=["xlsx", "csv"])
-api_key = st.text_input("输入 API Key（可选）", type="password")
+api_key = st.text_input("输入 API Key（可选 支持DeepSeek与硅基流动（千问））", type="password")
 
 if "ai_result" not in st.session_state:
     st.session_state["ai_result"] = None

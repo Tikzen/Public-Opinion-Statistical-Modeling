@@ -16,13 +16,12 @@ def load_config(config_path=None):
         return json.load(f)
 
 
-def resolve_api_key(config: dict, api_key: str | None = None) -> str:
+def resolve_api_key_for_provider(config: dict, provider_name: str, api_key: str | None = None) -> str:
     """
     API Key 优先级：
     1. 当前 provider 下的 api_key
     2. 前端输入的 api_key
     """
-    provider_name = config.get("active_provider", "openai_compatible")
     provider = config.get("providers", {}).get(provider_name, {})
 
     config_key = (provider.get("api_key") or "").strip()
@@ -33,7 +32,7 @@ def resolve_api_key(config: dict, api_key: str | None = None) -> str:
     if input_key:
         return input_key
 
-    raise ValueError("未检测到 API Key：请先在 agent_config.json 中配置，或通过前端输入。")
+    raise ValueError(f"未检测到 {provider_name} 的 API Key：请先在 agent_config.json 中配置，或通过前端输入。")
 
 
 def build_messages(data_summary, config: dict) -> list:
@@ -67,17 +66,18 @@ def build_messages(data_summary, config: dict) -> list:
     ]
 
 
-def analyze_with_llm(data_summary, api_key=None, config_path=None) -> str:
+def call_provider(config: dict, provider_name: str, data_summary, api_key=None) -> str:
     """
-    对外统一调用入口
-    兼容 service.py 中的调用方式：
-        analyze_with_llm(data_summary, api_key=..., config_path=...)
+    调用指定 provider
     """
-    config = load_config(config_path)
-
-    provider_name = config.get("active_provider", "openai_compatible")
     providers = config.get("providers", {})
     provider = providers.get(provider_name, {})
+
+    if not provider:
+        raise ValueError(f"未找到 provider 配置：{provider_name}")
+
+    if provider.get("enabled", True) is False:
+        raise ValueError(f"provider 已被禁用：{provider_name}")
 
     base_url = (provider.get("base_url") or "").strip()
     model = (provider.get("model") or "").strip()
@@ -86,11 +86,11 @@ def analyze_with_llm(data_summary, api_key=None, config_path=None) -> str:
     max_tokens = provider.get("max_tokens", 1200)
 
     if not base_url:
-        raise ValueError("当前 provider 未配置 base_url")
+        raise ValueError(f"{provider_name} 未配置 base_url")
     if not model:
-        raise ValueError("当前 provider 未配置 model")
+        raise ValueError(f"{provider_name} 未配置 model")
 
-    final_api_key = resolve_api_key(config, api_key)
+    final_api_key = resolve_api_key_for_provider(config, provider_name, api_key)
     messages = build_messages(data_summary, config)
 
     headers = {
@@ -110,4 +110,33 @@ def analyze_with_llm(data_summary, api_key=None, config_path=None) -> str:
     response.raise_for_status()
     data = response.json()
 
-    return data["choices"][0]["message"]["content"].strip()
+    content = data["choices"][0]["message"]["content"].strip()
+    return f"[当前调用平台: {provider_name}]\n\n{content}"
+
+
+def analyze_with_llm(data_summary, api_key=None, config_path=None) -> str:
+    """
+    对外统一调用入口
+
+    自动切换策略：
+    1. 优先使用 active_provider（建议设为 openai_compatible，即 DeepSeek）
+    2. 若失败，则自动回退到 siliconflow
+    """
+    config = load_config(config_path)
+
+    active_provider = config.get("active_provider", "openai_compatible")
+    fallback_provider = "siliconflow"
+
+    provider_order = [active_provider]
+    if fallback_provider not in provider_order:
+        provider_order.append(fallback_provider)
+
+    last_error = None
+
+    for provider_name in provider_order:
+        try:
+            return call_provider(config, provider_name, data_summary, api_key=api_key)
+        except Exception as e:
+            last_error = e
+
+    raise RuntimeError(f"所有可用 LLM 平台均请求失败。最后一次错误：{last_error}")
