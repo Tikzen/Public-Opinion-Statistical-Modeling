@@ -1,0 +1,123 @@
+{
+  "active_provider": "openai_compatible",
+  "providers": {
+    "openai_compatible": {
+      "enabled": true,
+      "base_url": "https://api.deepseek.com/v1",
+      "api_key": "sk-7083b93a79264899bdd0dd6659023947",
+      "model": "deepseek-v3.2",
+      "timeout": 60,
+      "temperature": 0.4,
+      "max_tokens": 1200
+    },
+    "siliconflow": {
+      "enabled": false,
+      "base_url": "https://api.siliconflow.cn/v1",
+      "api_key": "",
+      "model": "Qwen/Qwen2.5-7B-Instruct",
+      "timeout": 60,
+      "temperature": 0.4,
+      "max_tokens": 1200
+    }
+  },
+  "api_key_policy": {
+    "priority": [
+      "provider.api_key",
+      "frontend_input"
+    ],
+    "fallback_to_frontend_input": true
+  },
+  "agent_profile": {
+    "name": "Statistical Modeling Analysis Agent",
+    "role": "用于统计建模项目的传播数据分析与参数建议助手",
+    "language": "zh-CN",
+    "style": [
+      "专业",
+      "简洁",
+      "避免空话",
+      "适合比赛展示"
+    ]
+  },
+  "analysis_targets": {
+    "focus": [
+      "传播趋势识别",
+      "峰值特征分析",
+      "波动性判断",
+      "参数估计建议",
+      "拟合策略建议"
+    ],
+    "fit_parameters": [
+      "beta",
+      "gamma",
+      "num_nodes",
+      "attach_edges",
+      "source_type",
+      "seed_count",
+      "use_normalized_fit"
+    ]
+  },
+  "input_schema": {
+    "required_fields": [
+      "keyword",
+      "source",
+      "summary",
+      "param_suggestion"
+    ],
+    "summary_fields": [
+      "length",
+      "start_value",
+      "end_value",
+      "max_value",
+      "min_value",
+      "mean_value",
+      "std_value",
+      "peak_index",
+      "peak_date",
+      "peak_ratio",
+      "trend",
+      "volatility"
+    ],
+    "param_suggestion_fields": [
+      "beta_init",
+      "beta_min",
+      "beta_max",
+      "gamma_init",
+      "gamma_min",
+      "gamma_max",
+      "suggest_num_nodes",
+      "suggest_attach_edges",
+      "suggest_source_type",
+      "suggest_seed_count",
+      "use_normalized_fit",
+      "cn_advice_text"
+    ]
+  },
+  "prompt_templates": {
+    "system_prompt": "你是统计建模大赛项目中的传播数据分析智能体。你需要结合时间序列摘要与规则生成的参数建议，输出适合比赛展示的中文分析结论。",
+    "task_prompt": "请基于输入的数据摘要与参数建议，生成一段中文分析。要求同时覆盖趋势判断、峰值特征、波动性解释、参数设定合理性说明，以及后续拟合建议。",
+    "constraints": [
+      "不要脱离输入数据乱编结论",
+      "不要推荐与当前项目明显无关的复杂模型",
+      "优先围绕SIR类传播建模、参数估计和拟合策略展开",
+      "语言简洁，避免分点过多",
+      "结论应适合直接展示在系统页面中"
+    ]
+  },
+  "output_format": {
+    "mode": "single_paragraph",
+    "sections": [
+      "trend",
+      "peak",
+      "volatility",
+      "parameter_explanation",
+      "fitting_advice"
+    ],
+    "max_paragraphs": 1
+  },
+  "ui_text": {
+    "page_title": "AI Analysis",
+    "cn_section_title": "中文参数建议",
+    "llm_section_title": "AI分析结果",
+    "copy_data_section_title": "可复制数据"
+  }
+}
