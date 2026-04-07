@@ -12,7 +12,9 @@ import matplotlib as mpl
 from matplotlib import font_manager
 
 # 把项目根目录加入 Python 路径
-sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 import model
 from network.generator import create_network
@@ -25,12 +27,6 @@ from fitting.optimizer import optimize_parameters
 # Matplotlib 中文显示修复（与 simulator 同风格）
 # =========================
 def setup_matplotlib_font():
-    """
-    修复 matplotlib 中文显示问题：
-    1. 优先加载项目内置字体文件
-    2. 若项目字体不存在，再回退系统中文字体
-    3. 最后才使用 DejaVu Sans
-    """
     current_dir = os.path.dirname(__file__)
     project_root = os.path.dirname(current_dir)
 
@@ -46,7 +42,6 @@ def setup_matplotlib_font():
                 font_manager.fontManager.addfont(font_path)
                 font_prop = font_manager.FontProperties(fname=font_path)
                 font_name = font_prop.get_name()
-
                 mpl.rcParams["font.family"] = "sans-serif"
                 mpl.rcParams["font.sans-serif"] = [font_name]
                 mpl.rcParams["axes.unicode_minus"] = False
@@ -87,9 +82,6 @@ def setup_matplotlib_font():
 CN_FONT, SELECTED_FONT = setup_matplotlib_font()
 
 
-# =========================
-# 模型加载（与 simulator 同逻辑）
-# =========================
 def load_models():
     models = {}
 
@@ -99,7 +91,6 @@ def load_models():
 
         module = importlib.import_module(f"model.{module_name}")
 
-        # 新规范模型
         if hasattr(module, "MODEL_NAME") and hasattr(module, "STATES") and hasattr(module, "step"):
             models[module.MODEL_NAME] = {
                 "step": module.step,
@@ -108,7 +99,6 @@ def load_models():
             }
             continue
 
-        # 兼容旧规范
         if module_name == "si_model" and hasattr(module, "si_step"):
             models["SI"] = {
                 "step": module.si_step,
@@ -134,9 +124,6 @@ def load_models():
 MODEL_REGISTRY = load_models()
 
 
-# =========================
-# 辅助函数
-# =========================
 def parse_series_from_text(text: str) -> np.ndarray:
     if not text.strip():
         return np.array([])
@@ -147,14 +134,12 @@ def parse_series_from_text(text: str) -> np.ndarray:
     return np.array(values, dtype=float)
 
 
-
 def get_blocked_nodes(G, block_ratio):
     import networkx as nx
     centrality = nx.degree_centrality(G)
     num_blocked = max(1, int(len(G.nodes()) * block_ratio))
     sorted_nodes = sorted(centrality, key=centrality.get, reverse=True)
     return set(sorted_nodes[:num_blocked])
-
 
 
 def choose_initial_node(G, blocked_nodes, source_type):
@@ -165,11 +150,7 @@ def choose_initial_node(G, blocked_nodes, source_type):
     sorted_nodes = sorted(centrality, key=centrality.get, reverse=True)
 
     source_key_nodes = sorted_nodes[:max(1, int(len(all_nodes) * 0.05))]
-
-    normal_nodes = [
-        node for node in all_nodes
-        if node not in source_key_nodes and node not in blocked_nodes
-    ]
+    normal_nodes = [node for node in all_nodes if node not in source_key_nodes and node not in blocked_nodes]
 
     available_key_nodes = [node for node in source_key_nodes if node not in blocked_nodes]
     available_random_nodes = [node for node in all_nodes if node not in blocked_nodes]
@@ -182,7 +163,6 @@ def choose_initial_node(G, blocked_nodes, source_type):
         candidate_nodes = available_random_nodes or all_nodes
 
     return random.choice(candidate_nodes)
-
 
 
 def run_simulation_for_fit(
@@ -202,9 +182,7 @@ def run_simulation_for_fit(
 ):
     random.seed(seed)
 
-    # 保险保护，避免 attach_edges >= num_nodes
     attach_edges = min(attach_edges, max(1, num_nodes - 1))
-
     G = create_network(num_nodes, attach_edges)
 
     blocked_nodes = set()
@@ -271,7 +249,6 @@ def run_simulation_for_fit(
     }
 
 
-
 def pad_or_truncate(arr: np.ndarray, target_len: int) -> np.ndarray:
     if len(arr) == target_len:
         return arr.astype(float)
@@ -285,7 +262,6 @@ def pad_or_truncate(arr: np.ndarray, target_len: int) -> np.ndarray:
     pad_value = arr[-1]
     pad_array = np.full(target_len - len(arr), pad_value, dtype=float)
     return np.concatenate([arr.astype(float), pad_array])
-
 
 
 def simulate_avg_curve(
@@ -325,7 +301,6 @@ def simulate_avg_curve(
     return np.mean(np.vstack(curves), axis=0)
 
 
-
 def generate_self_test_data(
     model_type,
     target_state,
@@ -354,12 +329,25 @@ def generate_self_test_data(
     return pad_or_truncate(series, rounds)
 
 
-# =========================
-# 页面配置
-# =========================
-st.set_page_config(page_title="参数估计", page_icon="📈", layout="wide")
+def get_synced_value(key, default_value, min_value=None, max_value=None):
+    value = st.session_state.get(key, default_value)
 
-st.title("📈 参数估计（接入模型系统）")
+    try:
+        value = float(value) if isinstance(default_value, float) else value
+    except Exception:
+        value = default_value
+
+    if min_value is not None and isinstance(value, (int, float)):
+        value = max(min_value, value)
+    if max_value is not None and isinstance(value, (int, float)):
+        value = min(max_value, value)
+
+    return value
+
+
+st.set_page_config(page_title="Parameter Estimation", page_icon="📈", layout="wide")
+
+st.title("📈 Parameter Estimation")
 st.markdown(
     """
 本模块根据真实传播时间序列，反向估计传播模型参数：
@@ -381,20 +369,12 @@ st.markdown(
 
 st.caption(f"当前图表字体：{SELECTED_FONT}")
 
-
-# =========================
-# 侧边栏参数
-# =========================
 st.sidebar.header("模型与网络设置")
 
 available_models = list(MODEL_REGISTRY.keys())
 default_model_index = available_models.index("SIR") if "SIR" in available_models else 0
 
-model_type = st.sidebar.selectbox(
-    "传播模型",
-    available_models,
-    index=default_model_index,
-)
+model_type = st.sidebar.selectbox("传播模型", available_models, index=default_model_index)
 
 states_list = MODEL_REGISTRY[model_type]["states"]
 default_target_state = "I" if "I" in states_list else states_list[0]
@@ -413,25 +393,45 @@ source_labels = {
 }
 source_keys = ["random", "normal", "key"]
 
+source_type_default = st.session_state.get("fit_source_type", "random")
+if source_type_default not in source_keys:
+    source_type_default = "random"
+
 source_type = st.sidebar.selectbox(
     "初始传播源类型",
     source_keys,
+    index=source_keys.index(source_type_default),
     format_func=lambda x: source_labels[x],
 )
 
-num_nodes = st.sidebar.slider("代理网络节点数", 50, 1000, 100, 10)
+num_nodes_default = int(get_synced_value("fit_num_nodes", 100, 50, 1000))
+attach_edges_default = int(get_synced_value("fit_attach_edges", 3, 1, 10))
+seed_count_default = int(get_synced_value("fit_seed_count", 5, 1, 10))
+
+num_nodes = st.sidebar.slider("代理网络节点数", 50, 1000, num_nodes_default, 10)
 if num_nodes >= 500:
     st.sidebar.warning("当前节点规模较大，拟合时间会明显增加")
 
-attach_edges = st.sidebar.slider("每个新节点连接边数", 1, 10, 3, 1)
+attach_edges = st.sidebar.slider("每个新节点连接边数", 1, 10, attach_edges_default, 1)
 
 st.sidebar.header("搜索范围设置")
-beta_min = st.sidebar.slider("β 最小值", 0.01, 1.50, 0.05, 0.01)
-beta_max = st.sidebar.slider("β 最大值", 0.05, 2.00, 1.00, 0.01)
+
+beta_min_default = get_synced_value("fit_beta_min", 0.05, 0.01, 1.50)
+beta_max_default = get_synced_value("fit_beta_max", 1.00, 0.05, 2.00)
+if beta_min_default >= beta_max_default:
+    beta_max_default = min(2.00, max(beta_min_default + 0.01, 0.06))
+
+gamma_min_default = get_synced_value("fit_gamma_min", 0.01, 0.00, 1.50)
+gamma_max_default = get_synced_value("fit_gamma_max", 0.80, 0.01, 2.00)
+if gamma_min_default > gamma_max_default:
+    gamma_max_default = min(2.00, max(gamma_min_default + 0.01, 0.02))
+
+beta_min = st.sidebar.slider("β 最小值", 0.01, 1.50, float(beta_min_default), 0.01)
+beta_max = st.sidebar.slider("β 最大值", 0.05, 2.00, float(beta_max_default), 0.01)
 beta_steps = st.sidebar.slider("β 搜索步数", 5, 60, 20, 1)
 
-gamma_min = st.sidebar.slider("γ 最小值", 0.00, 1.50, 0.01, 0.01)
-gamma_max = st.sidebar.slider("γ 最大值", 0.01, 2.00, 0.80, 0.01)
+gamma_min = st.sidebar.slider("γ 最小值", 0.00, 1.50, float(gamma_min_default), 0.01)
+gamma_max = st.sidebar.slider("γ 最大值", 0.01, 2.00, float(gamma_max_default), 0.01)
 gamma_steps = st.sidebar.slider("γ 搜索步数", 5, 60, 20, 1)
 
 st.sidebar.header("优化方法设置")
@@ -455,10 +455,32 @@ if optimization_method == "bayesian":
     st.sidebar.caption("如未安装 scikit-optimize，请先执行：pip install scikit-optimize")
 
 st.sidebar.header("稳定性设置")
-seed_count = st.sidebar.slider("平均随机种子数量", 1, 10, 5, 1)
+seed_count = st.sidebar.slider("平均随机种子数量", 1, 10, seed_count_default, 1)
 base_seed = st.sidebar.number_input("基础随机种子", value=42, step=1)
 
-use_normalized_fit = st.sidebar.checkbox("使用归一化拟合（推荐）", value=True)
+use_normalized_fit_default = bool(st.session_state.get("fit_use_normalized_fit", True))
+use_normalized_fit = st.sidebar.checkbox("使用归一化拟合（推荐）", value=use_normalized_fit_default)
+
+if (
+    "fit_beta_init" in st.session_state
+    or "fit_gamma_init" in st.session_state
+    or "fit_num_nodes" in st.session_state
+    or "fit_attach_edges" in st.session_state
+):
+    st.sidebar.markdown("### AI 建议参考")
+    if "fit_beta_init" in st.session_state:
+        st.sidebar.write(f"建议 β 初值：**{st.session_state['fit_beta_init']:.4f}**")
+    if "fit_gamma_init" in st.session_state:
+        st.sidebar.write(f"建议 γ 初值：**{st.session_state['fit_gamma_init']:.4f}**")
+    if "fit_num_nodes" in st.session_state:
+        st.sidebar.write(f"建议节点数：**{int(st.session_state['fit_num_nodes'])}**")
+    if "fit_attach_edges" in st.session_state:
+        st.sidebar.write(f"建议连接边数：**{int(st.session_state['fit_attach_edges'])}**")
+    if "fit_source_type" in st.session_state:
+        st.sidebar.write(f"建议传播源类型：**{st.session_state['fit_source_type']}**")
+    if "fit_seed_count" in st.session_state:
+        st.sidebar.write(f"建议随机种子数：**{int(st.session_state['fit_seed_count'])}**")
+    st.sidebar.success("当前左侧参数已优先读取 AI Analysis 同步结果。")
 
 st.sidebar.markdown("---")
 st.sidebar.info(
@@ -469,10 +491,6 @@ st.sidebar.info(
     "- 归一化拟合更适合真实大规模数据的趋势匹配"
 )
 
-
-# =========================
-# 自检模式
-# =========================
 st.subheader("🧪 自检模式（推荐先运行）")
 st.markdown("先用当前模型自动生成测试数据，再反向拟合，看能否找回接近的参数。")
 
@@ -510,10 +528,6 @@ if "pe_self_test_series" in st.session_state:
         f"长度={st.session_state['pe_self_test_rounds']}"
     )
 
-
-# =========================
-# 数据输入
-# =========================
 st.subheader("📥 数据输入")
 
 tab1, tab2, tab3 = st.tabs(["手动输入", "上传 CSV", "使用自检数据"])
@@ -572,10 +586,6 @@ with tab3:
 if "pe_force_use_self_series" in st.session_state:
     real_series = st.session_state["pe_force_use_self_series"]
 
-
-# =========================
-# 原始数据展示
-# =========================
 if len(real_series) > 0:
     st.subheader("📊 原始数据")
     df_real = pd.DataFrame({
@@ -593,10 +603,6 @@ if len(real_series) > 0:
     st.pyplot(fig_real)
     plt.close(fig_real)
 
-
-# =========================
-# 参数拟合
-# =========================
 if len(real_series) > 0:
     if beta_min >= beta_max:
         st.error("β 最小值必须小于 β 最大值。")
@@ -670,10 +676,6 @@ if len(real_series) > 0:
                 st.session_state["pe_optimization_method_label"] = optimization_method_label
                 st.session_state["pe_optimization_method_key"] = optimization_method
 
-
-# =========================
-# 结果展示
-# =========================
 if "pe_best_beta" in st.session_state:
     st.subheader("📌 参数估计结果")
 
@@ -751,11 +753,7 @@ if "pe_best_beta" in st.session_state:
     st.dataframe(result_df, use_container_width=True)
 
     st.subheader("📝 自动拟合结论")
-    st.text_area(
-        "结论文本",
-        st.session_state["pe_conclusion_text"],
-        height=220
-    )
+    st.text_area("结论文本", st.session_state["pe_conclusion_text"], height=220)
 
     csv_data = result_df.to_csv(index=False).encode("utf-8-sig")
     st.download_button(
